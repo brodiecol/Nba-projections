@@ -1,0 +1,93 @@
+PUTTING THE NBA PROJECTIONS APP ONLINE (GitHub + Streamlit Community Cloud)
+============================================================================
+You will end up with a web link anyone can open, with no install. It takes about 30-40 minutes the first time.
+
+HOW IT WORKS (read this once)
+- GitHub stores your files online. Streamlit Community Cloud reads them from GitHub and runs the app.
+- The NBA's website tends to block cloud servers, so the online app cannot download data itself.
+  Instead YOUR computer (or a GitHub job) downloads the data into one file, data/latest.json, and that file
+  is kept in GitHub. The online app just reads it.
+- On the online copy, each visitor's edits (minutes, scenarios, pasted lines) stay in their own browser
+  session. They are not saved and not shared. The Accuracy tab is switched off online.
+
+PART 1 - MAKE A GITHUB ACCOUNT (5 min)
+ 1. Go to https://github.com and click Sign up. Follow the steps (email, password, username, verify email).
+ 2. Sign in.
+
+PART 2 - CREATE THE REPOSITORY (an online folder for the app) (3 min)
+ 1. Click the + at the top right, then New repository.
+ 2. Repository name: nba-projections
+ 3. Choose Public (simplest; Streamlit's free hosting works best with it).
+ 4. Tick "Add a README file".
+ 5. Click Create repository.
+
+PART 3 - UPLOAD THE APP FILES (5 min)
+ 1. Unzip nba_projections_github.zip somewhere easy (e.g. Desktop).
+ 2. In your repository page, click Add file, then Upload files.
+ 3. Open the unzipped folder, press Ctrl+A to select EVERYTHING inside it (files and the .github folder),
+    and drag it onto the browser page. Wait until every file shows as uploaded.
+ 4. Scroll down and click Commit changes.
+ 5. Check the repository page now lists app.py, requirements.txt, refresh_data.py and the other files.
+    (If the .github folder didn't upload, see "If the .github folder is missing" at the end.)
+
+PART 4 - UPLOAD TODAY'S DATA FILE (5 min)
+ 1. On your own computer, run your usual launcher (start_nba_projections.bat) or run:  py refresh_data.py
+    This creates  data\latest.json  in your project folder.
+ 2. On your Desktop make a new folder called  upload. Inside it make a folder called  data.
+    Copy ONLY latest.json into upload\data.
+ 3. In your GitHub repository click Add file, then Upload files, and drag the  data  folder in
+    (from inside the upload folder). Click Commit changes.
+ 4. Check that the repository now shows a  data  folder containing latest.json.
+ (If you ran the backtest, also upload data\calibration.json and data\dispersion.json the same way.)
+
+PART 5 - DEPLOY ON STREAMLIT COMMUNITY CLOUD (10 min)
+ 1. Go to https://share.streamlit.io and click Continue with GitHub. Allow access when asked.
+ 2. Click Create app (top right) and choose to deploy an app from an existing GitHub repository.
+ 3. Fill in:  Repository = YOURNAME/nba-projections   Branch = main   Main file path = app.py
+ 4. Optional: pick a friendly web address (App URL), e.g. nba-projections-yourname.
+ 5. Click Advanced settings and check Python version is 3.12 (the default). The Python version can't be
+    changed later without deleting and redeploying the app.
+ 6. Click Deploy. The first launch takes a few minutes while it installs packages. Logs appear on the right.
+ 7. When the app loads, check the top of the page says "App v9" and that games/projections show.
+    Copy the link from your browser's address bar. That is your shareable link.
+
+PART 6 - SHARING
+ - Send people the link. Free apps go to sleep after a stretch with no visitors; the next visitor just
+   clicks the button to wake it and waits a moment.
+ - To control who can see it, open the app, click Share (top right) or use the app's menu on share.streamlit.io.
+
+PART 7 - KEEPING THE DATA FRESH (pick one)
+ A) MANUAL (easiest, ~1 minute on game days)
+    1. Run start_nba_projections.bat on your computer so data\latest.json is fresh.
+    2. On GitHub open your repository, click the  data  folder, then Add file, Upload files,
+       drag the new latest.json in, and Commit changes. The online app updates within a minute or two.
+ B) AUTOMATIC ON GITHUB (may not work; try it)
+    The file .github/workflows/refresh.yml runs the data pull every day on GitHub's servers.
+    Test it: repository, Actions tab, "Refresh NBA data", Run workflow. A green tick means it worked and
+    data/latest.json was updated. A red cross usually means the NBA blocked GitHub's servers; use A or C.
+ C) AUTOMATIC FROM YOUR COMPUTER (advanced)
+    1. Install Git for Windows from https://git-scm.com (accept the default options).
+    2. Download your repository to your computer: open a Command Prompt in a folder and run
+         git clone https://github.com/YOURNAME/nba-projections.git
+    3. Put your latest files in that folder and double-click publish_data.bat whenever you want to refresh
+       and upload. The first time, a window asks you to sign in to GitHub.
+    (You can schedule publish_data.bat with Windows Task Scheduler.)
+
+PART 8 - UPDATING THE APP LATER
+ - Upload the changed files to GitHub the same way (same file names replace the old ones) and commit.
+   Streamlit notices the change and updates the app. If it looks stuck: open the app, click Manage app
+   (bottom right) and choose Reboot.
+
+IF SOMETHING GOES WRONG
+ - "No data file found": data/latest.json isn't in the repository, or it's not inside a folder named data.
+ - "No module named ...": requirements.txt must be in the main folder of the repository (not inside another folder).
+ - App won't start: open Manage app and read the log on the right; check Main file path is exactly app.py.
+ - It shows old data: the data file is old. Upload a fresh latest.json (Part 7).
+ - If the .github folder is missing: in the repository click Add file, Create new file, type
+   .github/workflows/refresh.yml as the name (typing the slashes makes the folders), paste the contents of
+   refresh.yml from the unzipped folder, and Commit.
+ - Don't upload your FantasyPros CSV or your data\history / data\cache folders.
+
+NOTES
+ - Data comes from the NBA's public stats. Keep use non-commercial.
+ - Projections are statistical estimates for information only, with no guarantee of results.

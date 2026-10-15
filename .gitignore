@@ -1,0 +1,13 @@
+# private/temporary files that should NOT go on GitHub
+__pycache__/
+*.pyc
+data/cache/
+data/history/
+data/overrides.json
+data/scenarios.json
+data/lines_*.txt
+data/accuracy_*.csv
+data/games_today.csv
+data/positions.csv
+data/fantasypros_dvp_*.csv
+data/test_*

@@ -1,0 +1,34 @@
+# Refreshes the NBA data once a day on GitHub's servers and saves it into the repo,
+# so the hosted app always has fresh numbers without you doing anything.
+name: Refresh NBA data
+
+on:
+  schedule:
+    - cron: "0 14 * * *"     # every day at 14:00 UTC (about 10am US Eastern); change the hour if you like
+  workflow_dispatch: {}      # also lets you run it by hand from the Actions tab
+
+permissions:
+  contents: write            # needed so it can save the new data file
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install what the data script needs
+        run: pip install pandas openpyxl nba_api
+
+      - name: Pull today's NBA data
+        run: python refresh_data.py
+
+      - name: Save the new data into the repo
+        run: |
+          git config user.name "refresh-bot"
+          git config user.email "refresh-bot@users.noreply.github.com"
+          git add data/latest.json
+          git diff --cached --quiet || (git commit -m "Update NBA data" && git push)
