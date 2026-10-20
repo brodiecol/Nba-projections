@@ -5,7 +5,7 @@ Reads data/latest.json (made by refresh_data.py or the app's Refresh button).
 
 Tabs
   Games        game-by-game view: team score projections, minutes chart + sliders that add to 240, pace/offense
-               sliders, and saved scenarios you can load and compare
+               sliders, saved scenarios you can load and compare, and a who-guards-whom matchup tracker
                (team score blends the player projections with team ORTG / DRTG / pace / home-away)
   All players  every player playing today in one table with ranges, over/under calculator, and a player detail
                view (last 15 games, minutes trend, how each adjustment changed the projection)
@@ -36,7 +36,7 @@ except Exception:  # noqa: BLE001
     GP = None
 
 HOSTED = os.getcwd().startswith("/mount/src")            # running on Streamlit Community Cloud
-APP_VERSION = "v10"
+APP_VERSION = "v11"
 SNAPSHOT_PATH = os.path.join("data", "latest.json")
 STATE_PATH = os.path.join("data", "overrides.json")      # your edits for the day
 CAL_PATH = os.path.join("data", "calibration.json")      # made by backtest.py
@@ -87,7 +87,7 @@ def save_state():
     ov = {k: v for k, v in st.session_state["ov"].items() if v.get("min") is not None or v.get("role", 0) != 0}
     gov = {g: a for g, a in st.session_state["gov"].items()
            if a.get("pace", 0) != 0 or any(x != 0 for x in a.get("off", {}).values()) or a.get("total", 0) > 0
-           or a.get("spread", 0) != 0}
+           or a.get("spread", 0) != 0 or bool(a.get("matchups"))}
     st.session_state["ov"], st.session_state["gov"] = ov, gov
     if HOSTED:
         return
@@ -137,6 +137,12 @@ def save_history(calc_df, team_rows, date, version):
     cols = ["Player", "Team", "Opp", "Game", "Default min", "Min"] + STATS + ["PRA", "PR", "PA", "RA"]
     calc_df[cols].round(3).to_csv(os.path.join(HISTORY_DIR, f"proj_{date}_{version}.csv"), index=False)
     pd.DataFrame(team_rows).round(2).to_csv(os.path.join(HISTORY_DIR, f"games_{date}_{version}.csv"), index=False)
+
+
+def on_matchup(game, off_player, def_key, star_key):
+    g = st.session_state["gov"].setdefault(game, {"pace": 0.0, "off": {}})
+    g.setdefault("matchups", {})[off_player] = {"def": st.session_state[def_key], "star": bool(st.session_state[star_key])}
+    save_state()
 
 
 def reset_game(game, names):
@@ -787,6 +793,89 @@ with tab_games:
                       on_change=on_min, args=(bk, mk))
 
     st.button("Reset this game's edits", on_click=reset_game, args=(game, names_in_game))
+
+    # ---------------------------------------------------------------------
+    # MATCHUP TRACKER: who guards whom
+    # ---------------------------------------------------------------------
+    st.divider()
+    st.subheader("Matchup tracker: who guards whom")
+    st.caption("Pick which opposing player guards each starter (starters = the five with the most projected minutes). "
+               "The defaults pair players by position. ★ marks a key matchup. This is a tracker for your own reads: it "
+               "doesn't change the projections. The star rating comes from how the opponent has defended these "
+               "players' positions (NBA defense-vs-position data).")
+    pos_by_name = {p["name"]: p for p in players}
+    pos_label = lambda n: pos_by_name.get(n, {}).get("pos_full") or "?"
+    slot = lambda n: {"G": 0, "F": 1, "C": 2}.get(pos_label(n)[:1], 1)
+
+    def starters(team):
+        names = [k for k in mins_used[team] if k != bench_key(team) and mins_used[team][k] > 0]
+        return sorted(names, key=lambda k: -mins_used[team][k])[:5]
+
+    def default_pairs(off_t, def_t):
+        offs = sorted(starters(off_t), key=lambda n: (slot(n), -mins_used[off_t][n]))
+        defs = sorted(starters(def_t), key=lambda n: (slot(n), -mins_used[def_t][n]))
+        return dict(zip(offs, defs))
+
+    def matchup_stars(off_t, def_t):
+        vals = [snap.get("dvp", {}).get(def_t, {}).get(pos_label(n)[:1], {}).get("PTS") for n in starters(off_t)]
+        vals = [v for v in vals if v]
+        if not vals:
+            return "rating n/a (needs defense-vs-position data)"
+        m = sum(vals) / len(vals)
+        n_ = 1 if m < 0.94 else 2 if m < 0.98 else 3 if m < 1.02 else 4 if m < 1.06 else 5
+        return "★" * n_ + "☆" * (5 - n_)
+
+    saved_mu = gov.get(game, {}).get("matchups", {})
+    cproj = calc.set_index("Player")
+    for col, off_t, def_t in zip(st.columns(2), (away_t, home_t), (home_t, away_t)):
+        with col:
+            st.markdown(f"**{off_t} OFFENSE**  {matchup_stars(off_t, def_t)}")
+            st.caption(f"{def_t} defender")
+            def_opts = [k for k in sorted(mins_used[def_t], key=lambda k: -mins_used[def_t][k])
+                        if k != bench_key(def_t) and mins_used[def_t][k] > 0]
+            defaults_ = default_pairs(off_t, def_t)
+            used = []
+            for n in starters(off_t):
+                saved = saved_mu.get(n, {})
+                choice = saved.get("def") if saved.get("def") in def_opts else defaults_.get(n, def_opts[0] if def_opts else None)
+                if choice is None:
+                    continue
+                dk, sk = f"mu_def|{game}|{off_t}|{n}", f"mu_star|{game}|{off_t}|{n}"
+                st.session_state[dk] = choice
+                st.session_state[sk] = bool(saved.get("star", False))
+                used.append(choice)
+                r_ = cproj.loc[n]
+                m1, m2, m3 = st.columns([3, 4, 1])
+                m1.markdown(f"**{n}** {pos_label(n)}")
+                m1.caption(f"{r_['PTS']:.1f} pts · {r_['REB']:.1f} reb · {r_['AST']:.1f} ast · {r_['Min']:.0f} min")
+                m2.selectbox("Defender", def_opts, key=dk, label_visibility="collapsed",
+                             format_func=lambda x: f"{x} ({pos_label(x)}) · {mins_used[def_t][x]:.0f} min",
+                             on_change=on_matchup, args=(game, n, dk, sk))
+                m3.checkbox("★", key=sk, on_change=on_matchup, args=(game, n, dk, sk))
+            dupes = sorted({u for u in used if used.count(u) > 1})
+            if dupes:
+                st.caption("Heads up: " + ", ".join(dupes) + " is guarding more than one starter.")
+
+    with st.expander("View H2H matchup data (each starter against this opponent)"):
+        h_rows = []
+        for off_t, def_t in ((away_t, home_t), (home_t, away_t)):
+            for n in starters(off_t):
+                p_ = pos_by_name[n]
+                h_, rec_ = p_.get("h2h"), p_.get("recent") or []
+                recent_pts = sum(x[3] for x in rec_) / len(rec_) if rec_ else None
+                h_rows.append({"Player": n, "Team": off_t, "Opponent": def_t,
+                               "Games vs opp": h_["n"] if h_ else 0,
+                               "MIN": h_["MIN"] if h_ else None, "PTS": h_["PTS"] if h_ else None,
+                               "REB": h_["REB"] if h_ else None, "AST": h_["AST"] if h_ else None,
+                               "3PM": h_["3PM"] if h_ else None, "Last-15 PTS": recent_pts})
+        if not any(x["Games vs opp"] for x in h_rows):
+            st.info("No head-to-head data in this file yet. Click Refresh data to load it.")
+        else:
+            st.dataframe(pd.DataFrame(h_rows), hide_index=True,
+                         column_config={c: st.column_config.NumberColumn(format="%.1f")
+                                        for c in ["MIN", "PTS", "REB", "AST", "3PM", "Last-15 PTS"]})
+            st.caption("Averages against the opposing TEAM over the last two seasons (box scores don't record who guarded "
+                       "whom, so player-vs-player history isn't available). Small samples swing a lot.")
 
 # =====================================================================
 # ALL PLAYERS TAB (read-only table; reflects whatever you did in Games)

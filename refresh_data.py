@@ -153,6 +153,24 @@ def build_snapshot(date=None):
     except Exception as e:  # noqa: BLE001
         print(f"  (couldn't build recent-game tables: {e})")
 
+    # how each player has done against today's opponent team over the last two seasons
+    h2h = {}
+    try:
+        if allx is not None:
+            grp = allx.groupby(["PLAYER_ID", "opp_id"]).agg(n=("MIN", "size"), MIN=("MIN", "mean"), PTS=("PTS", "mean"),
+                                                            REB=("REB", "mean"), AST=("AST", "mean"), FG3M=("FG3M", "mean"))
+            abbr2id_ = {v: k for k, v in id2abbr.items()}
+            for r in rows:
+                key = (r["pid"], abbr2id_.get(r["opp"]))
+                if key in grp.index:
+                    g_ = grp.loc[key]
+                    h2h[r["pid"]] = {"n": int(g_["n"]), "MIN": round(float(g_["MIN"]), 1), "PTS": round(float(g_["PTS"]), 1),
+                                     "REB": round(float(g_["REB"]), 1), "AST": round(float(g_["AST"]), 1),
+                                     "3PM": round(float(g_["FG3M"]), 1)}
+    except Exception as e:  # noqa: BLE001
+        print(f"  (couldn't build head-to-head tables: {e})")
+        h2h = {}
+
     snap_players = []
     for r in rows:
         p = {"name": r["name"], "team": r["team"], "opp": r["opp"], "ha": r["ha"], "b2b": r["b2b"],
@@ -165,6 +183,8 @@ def build_snapshot(date=None):
                 p[f"rate_{name}_ve"] = round(float(players.loc[r["pid"], col]), 4)
         if r["pid"] in recent:
             p["recent"] = recent[r["pid"]]
+        if r["pid"] in h2h:
+            p["h2h"] = h2h[r["pid"]]
         snap_players.append(p)
 
     snap_teams = {}
